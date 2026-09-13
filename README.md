@@ -33,7 +33,7 @@ defer found.deinit(allocator);
 
 Every figure above, the method behind it, the assumptions that turned out to be
 wrong and the limits of what was checked are written up in **[AUDIT.md](AUDIT.md)**.
-| Behaviour is pinned by tests | 199 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
+| Behaviour is pinned by tests | 213 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
 
 ## Using it
 
@@ -153,6 +153,59 @@ Notes:
 - The document node is available as `documentNode()` if you need to append at
   the top level yourself.
 
+## CSS
+
+lexbor is a CSS engine, not only a CSS parser. Three layers are available:
+
+| Layer | What it does |
+|---|---|
+| `css` | Full CSS Syntax parsing and a CSSOM (rules, at-rules, declarations, properties, values, units) |
+| `selectors` | Selector parsing and matching against the DOM (`querySelector`) |
+| `style` | Applies matched rules to elements and stores a per-element computed style tree |
+
+**Cascade resolution is real.** `examples/css_cascade.zig` is a self-checking
+demonstration of specificity ordering, `!important`, inline-style precedence and
+source order:
+
+```
+$ ./zig-out/bin/css_cascade
+lexbor CSS cascade (7 cases)
+
+  ok    specificity: #id beats .class beats type         color: green
+  ok    specificity wins over source order               color: green
+  ok    !important beats higher specificity              color: red !important
+  ok    author !important beats inline style             color: red !important
+  ok    inline style beats author normal declarations    color: blue
+  ok    equal specificity: later rule wins               color: blue
+  ok    attribute selector (b) beats type selector (c)   color: blue
+```
+
+Style application is **opt-in** and needs `lxb_style_init()`. The high-level
+`lxb_engine_t` does it for you:
+
+```zig
+const c = lexbor.sys.c;
+
+const engine = c.lxb_engine_create();
+defer _ = c.lxb_engine_destroy(engine);
+try lexbor.status.check(c.lxb_engine_init(engine));
+try lexbor.status.check(c.lxb_engine_parse(engine, html.ptr, html.len, 0));
+
+// Then, for any element:
+var str = std.mem.zeroes(c.lexbor_str_t);
+try lexbor.status.check(c.lxb_dom_element_style_serialize_str(element, &str, 0));
+// or: c.lxb_dom_element_style_by_name(element, "color", 5)
+```
+
+> **Careful:** `lxb_dom_element_style_by_name()` and friends dereference the
+> document's `css` field **without a null check**. On a document built by
+> `html.Parser` (which does not call `lxb_style_init()`) that field is null and
+> the call aborts. See `AUDIT.md`.
+
+There is no idiomatic wrapper for the `style` module yet — it is reachable
+through `sys`. The `css` and `selectors` modules do have wrappers
+(`css.Parser`, `selectors.Engine`).
+
 ## Layout
 
 | Path | Purpose |
@@ -163,7 +216,7 @@ Notes:
 | `tools/check_coverage.zig` | Public-API coverage gate |
 | `tools/check-consumer.sh` | External-consumer integration check |
 | `vendor/lexbor/` | Vendored lexbor v3.0.1 (see `vendor/lexbor/VENDOR.md`) |
-| `examples/` | `parse.zig` (raw `sys`), `query.zig` (wrappers), `build_dom.zig` (DOM by hand) |
+| `examples/` | `parse.zig` (raw `sys`), `query.zig` (wrappers), `build_dom.zig` (DOM by hand), `css_cascade.zig` (CSS cascade) |
 
 ## Build steps
 
@@ -179,7 +232,7 @@ Notes:
 
 ## Testing
 
-199 tests, split in two halves that `zig build test` runs together.
+213 tests, split in two halves that `zig build test` runs together.
 
 ### Inline unit tests (`src/`)
 
@@ -203,6 +256,7 @@ every `lxb_status_t` enumerator.
 | `adversarial_test.zig` | 1 MiB documents, 5000-deep nesting, 64 KiB attributes, NUL bytes, exhausted buffers |
 | `fuzz_test.zig` | Deterministic (seeded) fuzzing of HTML, markup, selectors and URLs |
 | `build_dom_test.zig` | Assembling a DOM by hand, including the lexbor empty-name defect |
+| `style_test.zig` | CSS cascade: specificity, `!important`, inline style, source order |
 | `integration_test.zig` | End-to-end scenarios: scraping, tables, mutation round-trips |
 
 ### How failures are provoked

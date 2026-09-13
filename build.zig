@@ -67,6 +67,17 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(example_build_dom);
 
+    const example_css_cascade = b.addExecutable(.{
+        .name = "css_cascade",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/css_cascade.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "z_lexbor", .module = z.module }},
+        }),
+    });
+    b.installArtifact(example_css_cascade);
+
     // ---- tests -----------------------------------------------------------
     // Two halves: the inline unit tests that ship next to the code, and the
     // dedicated tests/ suite (integration, adversarial, fuzz, OOM injection).

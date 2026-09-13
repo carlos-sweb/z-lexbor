@@ -25,6 +25,8 @@ jobs:
         run: |
           ./zig-out/bin/parse
           ./zig-out/bin/query
+          ./zig-out/bin/build_dom
+          ./zig-out/bin/css_cascade
 
   release-safe:
     name: full suite under ReleaseSafe

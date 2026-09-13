@@ -18,7 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `document.element`, so without this fallback the root was invisible.
 - `Document.documentNode()` exposes the document node itself.
 - `examples/build_dom.zig` and a "Building a DOM without parsing" section in the
-  README, with 17 new tests in `tests/build_dom_test.zig` (199 total).
+  README, with 17 new tests in `tests/build_dom_test.zig` (213 total overall).
 
 ### Fixed
 
@@ -35,12 +35,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **`Document.rootElement()` returned null for documents built by hand** (see
   above).
 
+- **CSS cascade coverage.** `tests/style_test.zig` (14 tests) and the
+  self-checking `examples/css_cascade.zig` pin that lexbor resolves the cascade
+  for real: specificity ordering (`id > class > type`), `!important` beating
+  higher specificity, author `!important` beating an inline style, inline style
+  beating author normal declarations, and source order as the tiebreak.
+
 ### Documented
 
+- **lexbor is a CSS engine, not only a parser.** Three layers: `css` (Syntax +
+  CSSOM), `selectors` (matching), `style` (applies matched rules into a
+  per-element computed style tree). The README gained a "CSS" section.
+- **Style queries require `lxb_style_init()`.** Without it the document's `css`
+  field is null, and `lxb_dom_element_style_by_name()` dereferences it without a
+  null check (`style/dom/interfaces/element.c:103`), aborting the process.
+  `html.Parser` does not call `lxb_style_init()`; `lxb_engine_t` does.
 - Appending a node that belongs to another document is accepted by lexbor and
   **moves** the node, leaving the source document without a root.
-- `AUDIT.md` gained two findings (the empty-name defect and cross-document
-  node moving) and updated figures.
+- `AUDIT.md` gained three findings and updated figures.
 
 ## [0.2.0] - 2026-09-13
 

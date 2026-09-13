@@ -14,8 +14,8 @@ audit still does **not** prove.
 | Public headers exported | **226** (of 250 total) |
 | Raw `extern fn` in the bindings | **2 740** (16 602 generated lines) |
 | Public API names covered by the gate | **2 408 / 2 408**, 0 missing |
-| Tests | **199** (173 suite + 26 inline) |
-| Test suite size | 3 500+ lines across 17 files |
+| Tests | **213** (187 suite + 26 inline) |
+| Test suite size | 3 800+ lines across 18 files |
 | Target platforms | `x86_64-linux`, `aarch64-linux`, `x86_64-windows-gnu`, `wasm32-wasi` |
 | Optimisation modes tested | Debug, ReleaseSafe, ReleaseFast |
 | CI jobs | 8, all green |
@@ -292,7 +292,25 @@ Two smaller corrections of the same kind: the root element's `parent()` is the
 **document node**, not null; and `<p>text</p>` is not a leaf — its text is a
 child node.
 
-**6. Appending across documents moves the node silently.**
+**6. Style queries crash on a document that was never style-initialised.**
+`lxb_dom_element_style_by_name()` and the rest of the style read API dereference
+`doc->css` without a null check
+(`vendor/lexbor/source/lexbor/style/dom/interfaces/element.c:103`):
+
+```
+panic: member access within null pointer of type 'lxb_dom_document_css_t'
+  lexbor_avl_search(doc->css->styles, ...)
+  lxb_dom_element_style_node_by_id   style/dom/interfaces/element.c:103
+  lxb_dom_element_style_by_name      style/dom/interfaces/element.c:80
+```
+
+`doc->css` is populated by `lxb_style_init()`. `html.Parser` never calls it
+(style application is opt-in), so querying a style on a document from
+`html.Parser` aborts. The test asserts the raw `css == null` precondition rather
+than calling the crashing function, and this precondition is documented in the
+README.
+
+**7. Appending across documents moves the node silently.**
 lexbor does not raise a `WRONG_DOCUMENT_ERR`-style exception: the node is moved
 and the source document is left without a root, so a later `serializeTo` on it
 returns `error.NoRootElement`. Documented and pinned rather than assumed.
@@ -326,6 +344,11 @@ including the fuzzing loops.
 
 Honest limits matter more than the numbers above.
 
+- **CSS coverage is behavioural, not exhaustive.** The cascade cases in
+  `tests/style_test.zig` pin specificity, `!important`, inline precedence and
+  source order, but there is no conformance run against the CSS test suites and
+  no wrapper for the `style` module — its 33 public functions are reached
+  through `sys`.
 - **No dynamic analysis of the C side.** Zig's testing allocator detects leaks
   in *Zig* allocations. lexbor's internal memory management is trusted, not
   audited: no ASan, MSan or Valgrind run is part of CI. This is the single
@@ -392,7 +415,7 @@ The wrapper's central claims are machine-checked rather than asserted:
   errors, exhaustively tested;
 - **hermeticity and portability** — 213 C translation units compiled from a
   pinned vendored tree across four targets, with no system dependency;
-- **behavioural robustness** — 199 tests including allocation-failure injection,
+- **behavioural robustness** — 213 tests including allocation-failure injection,
   deterministic fuzzing and adversarial sizing, all validated by mutation
   testing that proved the suite can fail.
 
