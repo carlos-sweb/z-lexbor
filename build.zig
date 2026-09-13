@@ -56,6 +56,17 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(example_query);
 
+    const example_build_dom = b.addExecutable(.{
+        .name = "build_dom",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/build_dom.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "z_lexbor", .module = z.module }},
+        }),
+    });
+    b.installArtifact(example_build_dom);
+
     // ---- tests -----------------------------------------------------------
     // Two halves: the inline unit tests that ship next to the code, and the
     // dedicated tests/ suite (integration, adversarial, fuzz, OOM injection).

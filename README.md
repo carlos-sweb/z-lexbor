@@ -33,7 +33,7 @@ defer found.deinit(allocator);
 
 Every figure above, the method behind it, the assumptions that turned out to be
 wrong and the limits of what was checked are written up in **[AUDIT.md](AUDIT.md)**.
-| Behaviour is pinned by tests | 182 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
+| Behaviour is pinned by tests | 199 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
 
 ## Using it
 
@@ -63,8 +63,8 @@ The raw, complete, 1:1 translated C API (`z_lexbor.sys.c`).
 
 | Module | Contents |
 |---|---|
-| `html` | `Parser` (RAII, owns its documents), `Document`, `serialize`, `serializeDocument` |
-| `dom` | `Node`, `Element`, `Attr`, `NodeType`, `Children`, `Descendants`, `Attributes` |
+| `html` | `Parser` (RAII, owns its documents), `Document`, `serialize`, `serializeDocument`; `OwnedDocument` for building a DOM by hand |
+| `dom` | `Node`, `Element`, `Attr`, `NodeType`, `Children`, `Descendants`, `Attributes`; `createElement`, `createTextNode`, `appendChild`, `appendElement`, `appendText` |
 | `css` | `Parser` (RAII), `SelectorList` |
 | `selectors` | `Engine` with `compile`, `find`, `queryAll`, `queryFirst` |
 | `url` | `Parser` (RAII), `Url.serialize`, base-relative resolution |
@@ -76,13 +76,82 @@ The raw, complete, 1:1 translated C API (`z_lexbor.sys.c`).
 * `html.Parser` owns every `Document` it produces: a document lives in the
   parser's memory pool and is invalidated by `Parser.deinit`.
 * `dom.Node` / `dom.Element` / `dom.Attr` are **non-owning views** with no
-  `deinit`.
+  `deinit` — including the ones returned by `createElement`.
+* `html.OwnedDocument` owns a document built by hand and frees every node
+  in it on `deinit`.
 * `css.Parser` owns the `SelectorList`s it parses; `selectors.Engine` owns both
   its CSS parser and its selector engine.
 * `url.Parser` owns the `Url`s it parses.
 * Memory that lexbor allocated is only ever freed by the corresponding
   `lxb_*_destroy`. A Zig allocator is never used on lexbor-owned pointers;
   `queryAll` allocates only the *result list*.
+
+## Building a DOM without parsing
+
+lexbor can assemble a tree from scratch, and `html.OwnedDocument` wraps that.
+Note that `lxb_html_document_create()` returns an **empty** document: the tree
+builder only runs during parsing, so nothing creates the `html`/`head`/`body`
+skeleton for you.
+
+```zig
+const std = @import("std");
+const lexbor = @import("z_lexbor");
+
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+
+    var document = try lexbor.html.OwnedDocument.create();
+    defer document.deinit();
+
+    // document -> html -> { head -> link, body -> h1 -> "Hello world" }
+    const html = try document.appendElement("html");
+
+    const head = try html.appendElement("head");
+    const link = try head.appendElement("link");
+    try link.setAttribute("rel", "stylesheet");
+    try link.setAttribute("href", "style.css");
+
+    const body = try html.appendElement("body");
+    const h1 = try body.appendElement("h1");
+    _ = try h1.appendText("Hello world");
+
+    var buffer: [512]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try document.serializeTo(&writer);
+
+    var out_buffer: [512]u8 = undefined;
+    var out = std.Io.File.stdout().writer(io, &out_buffer);
+    try out.interface.writeAll(std.Io.Writer.buffered(&writer));
+    try out.interface.writeAll("\n");
+    try out.interface.flush();
+}
+```
+
+Output:
+
+```html
+<html><head><link rel="stylesheet" href="style.css"></head><body><h1>Hello world</h1></body></html>
+```
+
+The full runnable version is `examples/build_dom.zig` (`zig build` then
+`./zig-out/bin/build_dom`).
+
+Notes:
+
+- `appendElement` and `appendText` create the node in the document that owns
+  the parent, then append it. Use `document.createElement` /
+  `createTextNode` for a detached node you intend to attach later.
+- `Node.appendChild` runs the DOM's insertion steps (validity checks and
+  mutation callbacks) and returns `error.InsertRejected` on a DOM exception.
+  `appendChildUnchecked` skips those steps and is faster.
+- Appending a node that already lives in **another document** is accepted by
+  lexbor and **moves** the node, leaving the original document without a root.
+- An **empty element name** is rejected with `error.InvalidName`. This is not
+  cosmetic: a zero-length name makes lexbor's tag hash underflow
+  (`lexbor_shs_entry_get_lower_static` in `core/shs.c`), which aborts under
+  safety checks. The wrapper refuses it before the call. See `AUDIT.md`.
+- The document node is available as `documentNode()` if you need to append at
+  the top level yourself.
 
 ## Layout
 
@@ -94,7 +163,7 @@ The raw, complete, 1:1 translated C API (`z_lexbor.sys.c`).
 | `tools/check_coverage.zig` | Public-API coverage gate |
 | `tools/check-consumer.sh` | External-consumer integration check |
 | `vendor/lexbor/` | Vendored lexbor v3.0.1 (see `vendor/lexbor/VENDOR.md`) |
-| `examples/` | `parse.zig` (raw `sys`), `query.zig` (wrappers) |
+| `examples/` | `parse.zig` (raw `sys`), `query.zig` (wrappers), `build_dom.zig` (DOM by hand) |
 
 ## Build steps
 
@@ -110,7 +179,7 @@ The raw, complete, 1:1 translated C API (`z_lexbor.sys.c`).
 
 ## Testing
 
-182 tests, split in two halves that `zig build test` runs together.
+199 tests, split in two halves that `zig build test` runs together.
 
 ### Inline unit tests (`src/`)
 
@@ -133,6 +202,7 @@ every `lxb_status_t` enumerator.
 | `ownership_test.zig` | Idempotent teardown, `Document` has no `deinit`, leak checking |
 | `adversarial_test.zig` | 1 MiB documents, 5000-deep nesting, 64 KiB attributes, NUL bytes, exhausted buffers |
 | `fuzz_test.zig` | Deterministic (seeded) fuzzing of HTML, markup, selectors and URLs |
+| `build_dom_test.zig` | Assembling a DOM by hand, including the lexbor empty-name defect |
 | `integration_test.zig` | End-to-end scenarios: scraping, tables, mutation round-trips |
 
 ### How failures are provoked
@@ -158,6 +228,7 @@ The suite was validated by injecting deliberate bugs and confirming it fails:
 | `status.check` swallows `LXB_STATUS_ERROR_NOT_EXISTS` | 3 tests fail |
 | `conv.slice` drops its null guard | tests abort with `panic: attempt to use null value` |
 | `FixedSink` stops reporting truncation | 3 tests fail |
+| the `createElement` empty-name guard is removed | the process **aborts** inside lexbor (`core/shs.c` integer underflow) |
 
 This is also how a real coverage gap was found and closed: the *inline* status
 test originally missed `NotExists`, which the suite caught.

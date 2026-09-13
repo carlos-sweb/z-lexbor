@@ -80,16 +80,27 @@ pub const Document = struct {
         return &self.ptr.*.dom_document;
     }
 
+    /// The document node itself: the parent of the root element.
+    pub fn documentNode(self: Document) dom.Node {
+        return .{ .ptr = c.lxb_dom_interface_node(self.domDocument()) };
+    }
+
     /// The document's root element (normally `<html>`).
+    ///
+    /// The parser caches this in `document.element`. A document built by hand
+    /// does **not** populate that field, so the first element child of the
+    /// document node is used as a fallback.
     pub fn rootElement(self: Document) ?dom.Element {
-        return dom.Element.maybe(self.ptr.*.dom_document.element);
+        if (self.ptr.*.dom_document.element != null) {
+            return dom.Element.maybe(self.ptr.*.dom_document.element);
+        }
+        return dom.firstElementChild(self.documentNode());
     }
 
     /// The root element as a generic node.
     pub fn rootNode(self: Document) ?dom.Node {
-        const element = self.ptr.*.dom_document.element;
-        if (element == null) return null;
-        return dom.Node{ .ptr = c.lxb_dom_interface_node(element) };
+        const element = self.rootElement() orelse return null;
+        return element.node();
     }
 
     /// The document title, if the document has one.
@@ -98,6 +109,90 @@ pub const Document = struct {
         const value = c.lxb_html_document_title(self.ptr, &len);
         if (value == null) return null;
         return conv.slice(value, len);
+    }
+};
+
+/// An owning, standalone HTML document.
+///
+/// Use this to build a DOM by hand instead of parsing one. `lxb_html_document_create()`
+/// returns an *empty* document: the tree builder only runs during parsing, so
+/// nothing creates the `html`/`head`/`body` skeleton for you.
+///
+/// ```zig
+/// var document = try html.OwnedDocument.create();
+/// defer document.deinit();
+///
+/// const root = try document.appendElement("html");
+/// const head = try root.appendElement("head");
+/// _ = try head.appendElement("link");
+/// const body = try root.appendElement("body");
+/// const h1 = try body.appendElement("h1");
+/// _ = try h1.appendText("Hello world");
+/// ```
+pub const OwnedDocument = struct {
+    ptr: [*c]c.lxb_html_document_t,
+
+    /// Creates an empty HTML document. Nothing is appended to it yet.
+    pub fn create() status.Error!OwnedDocument {
+        const ptr = c.lxb_html_document_create();
+        if (ptr == null) return error.OutOfMemory;
+        return .{ .ptr = ptr };
+    }
+
+    /// Destroys the document and every node created in it.
+    ///
+    /// Idempotent: a second call is a no-op.
+    pub fn deinit(self: *OwnedDocument) void {
+        if (self.ptr != null) {
+            _ = c.lxb_html_document_destroy(self.ptr);
+            self.ptr = null;
+        }
+    }
+
+    /// A borrowed view, for use with the read-only helpers.
+    pub fn view(self: OwnedDocument) Document {
+        return .{ .ptr = self.ptr };
+    }
+
+    pub fn domDocument(self: OwnedDocument) [*c]c.lxb_dom_document_t {
+        return &self.ptr.*.dom_document;
+    }
+
+    /// The document node, so nodes can be appended at the top level.
+    pub fn documentNode(self: OwnedDocument) dom.Node {
+        return self.view().documentNode();
+    }
+
+    /// The root element, or null when nothing has been appended yet.
+    pub fn rootElement(self: OwnedDocument) ?dom.Element {
+        return self.view().rootElement();
+    }
+
+    pub fn createElement(self: OwnedDocument, local_name: []const u8) dom.BuildError!dom.Element {
+        return dom.createElement(self.domDocument(), local_name);
+    }
+
+    pub fn createTextNode(self: OwnedDocument, text: []const u8) dom.BuildError!dom.Node {
+        return dom.createTextNode(self.domDocument(), text);
+    }
+
+    /// Creates an element and appends it directly under the document node.
+    ///
+    /// This is the usual first step: `appendElement("html")`.
+    pub fn appendElement(self: OwnedDocument, local_name: []const u8) dom.BuildError!dom.Element {
+        return self.documentNode().appendElement(local_name);
+    }
+
+    /// Appends an existing node under the document node.
+    pub fn appendChild(self: OwnedDocument, child: dom.Node) dom.BuildError!void {
+        return self.documentNode().appendChild(child);
+    }
+
+    /// Serializes the root element, or returns `error.NoRootElement` when the
+    /// document is still empty.
+    pub fn serializeTo(self: OwnedDocument, writer: *std.Io.Writer) !void {
+        const root = self.rootElement() orelse return error.NoRootElement;
+        return serialize(root.node(), writer);
     }
 };
 

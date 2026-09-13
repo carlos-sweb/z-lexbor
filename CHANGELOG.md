@@ -3,6 +3,45 @@
 All notable changes to `z-lexbor` are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Build a DOM without parsing.** `html.OwnedDocument` wraps
+  `lxb_html_document_create()` (which returns an *empty* document — the tree
+  builder only runs during parsing), and `dom` gained the mutation primitives:
+  `createElement`, `createTextNode`, `firstElementChild`, `Node.appendChild`,
+  `Node.appendChildUnchecked`, `Node.appendElement`, `Node.appendText`,
+  `Node.ownerDocument`, plus the same conveniences on `Element`.
+- `Document.rootElement()` / `rootNode()` now fall back to the first element
+  child of the document node. A hand-built document never populates
+  `document.element`, so without this fallback the root was invisible.
+- `Document.documentNode()` exposes the document node itself.
+- `examples/build_dom.zig` and a "Building a DOM without parsing" section in the
+  README, with 17 new tests in `tests/build_dom_test.zig` (199 total).
+
+### Fixed
+
+- **`dom.createElement` rejects an empty name with `error.InvalidName`.** A
+  zero-length element name underflows an unsigned offset inside lexbor's tag
+  hash (`lexbor_shs_entry_get_lower_static`, `core/shs.c:67`), which aborts the
+  process under Zig's safety checks and would read out of bounds in an
+  optimised build. The wrapper now refuses it before the call, matching the
+  DOM's `InvalidCharacterError`.
+
+  This is an **upstream lexbor defect**, not a wrapper bug: the root cause is in
+  `vendor/lexbor/source/lexbor/core/shs.c`. It has not been reported to the
+  lexbor project; the guard here is what keeps Zig callers safe.
+- **`Document.rootElement()` returned null for documents built by hand** (see
+  above).
+
+### Documented
+
+- Appending a node that belongs to another document is accepted by lexbor and
+  **moves** the node, leaving the source document without a root.
+- `AUDIT.md` gained two findings (the empty-name defect and cross-document
+  node moving) and updated figures.
+
 ## [0.2.0] - 2026-09-13
 
 Testing, verification and documentation release. **No change to the library

@@ -39,6 +39,58 @@ pub const NodeType = enum(u32) {
     }
 };
 
+/// `lxb_dom_node_append_child` reports DOM exceptions; -1 means success.
+const exception_ok: c.lxb_dom_exception_code_t = @intCast(c.LXB_DOM_EXCEPTION_OK);
+
+/// Errors raised when building or mutating the DOM.
+pub const BuildError = error{
+    /// lexbor could not allocate the node.
+    OutOfMemory,
+    /// The insertion raised a DOM exception (for example a hierarchy request).
+    InsertRejected,
+    /// The element name was empty.
+    ///
+    /// Rejected before reaching lexbor: its tag hash underflows on a
+    /// zero-length name (`lexbor_shs_entry_get_lower_static` in `core/shs.c`),
+    /// which aborts under Zig's safety checks and would read wild memory in an
+    /// optimised build. The DOM also specifies `InvalidCharacterError` here.
+    InvalidName,
+};
+
+/// Creates a new element owned by `document`.
+///
+/// The result is a borrowed view: the document owns it, so there is nothing to
+/// free individually.
+pub fn createElement(
+    document: [*c]c.lxb_dom_document_t,
+    local_name: []const u8,
+) BuildError!Element {
+    if (local_name.len == 0) return error.InvalidName;
+
+    const el = c.lxb_dom_document_create_element(document, conv.ptr(local_name), local_name.len, null);
+    if (el == null) return error.OutOfMemory;
+    return .{ .ptr = el };
+}
+
+/// Creates a new text node owned by `document`.
+pub fn createTextNode(
+    document: [*c]c.lxb_dom_document_t,
+    text: []const u8,
+) BuildError!Node {
+    const node = c.lxb_dom_document_create_text_node(document, conv.ptr(text), text.len);
+    if (node == null) return error.OutOfMemory;
+    return .{ .ptr = c.lxb_dom_interface_node(node) };
+}
+
+/// The first element child of `node`, skipping text and comment nodes.
+pub fn firstElementChild(node: Node) ?Element {
+    var child = node.firstChild();
+    while (child) |candidate| : (child = candidate.nextSibling()) {
+        if (candidate.asElement()) |el| return el;
+    }
+    return null;
+}
+
 /// A borrowed DOM node.
 pub const Node = struct {
     ptr: [*c]c.lxb_dom_node_t,
@@ -90,6 +142,41 @@ pub const Node = struct {
     pub fn name(self: Node) []const u8 {
         var len: usize = 0;
         return conv.slice(c.lxb_dom_node_name(self.ptr, &len), len);
+    }
+
+    /// The document that owns this node.
+    pub fn ownerDocument(self: Node) [*c]c.lxb_dom_document_t {
+        return self.ptr.*.owner_document;
+    }
+
+    /// Appends `child` as this node's last child, running the DOM's insertion
+    /// steps (validity checks and mutation callbacks).
+    ///
+    /// Returns `error.InsertRejected` when the DOM raises an exception. Use
+    /// `appendChildUnchecked` to bypass those steps.
+    pub fn appendChild(self: Node, child: Node) BuildError!void {
+        const code = c.lxb_dom_node_append_child(self.ptr, child.ptr);
+        if (code != exception_ok) return error.InsertRejected;
+    }
+
+    /// Appends `child` without running the DOM's insertion steps. Faster, but
+    /// no validity checking and no mutation callbacks.
+    pub fn appendChildUnchecked(self: Node, child: Node) void {
+        c.lxb_dom_node_insert_child(self.ptr, child.ptr);
+    }
+
+    /// Creates a child element in the same document and appends it.
+    pub fn appendElement(self: Node, local_name: []const u8) BuildError!Element {
+        const el = try createElement(self.ownerDocument(), local_name);
+        try self.appendChild(el.node());
+        return el;
+    }
+
+    /// Creates a text node in the same document and appends it.
+    pub fn appendText(self: Node, text: []const u8) BuildError!Node {
+        const node = try createTextNode(self.ownerDocument(), text);
+        try self.appendChild(node);
+        return node;
     }
 
     /// The concatenated text content of this node's subtree.
@@ -272,6 +359,21 @@ pub const Element = struct {
 
     pub fn attributes(self: Element) Attributes {
         return .{ .next_ptr = c.lxb_dom_element_first_attribute(self.ptr) };
+    }
+
+    /// Appends `child` as this element's last child (DOM insertion steps run).
+    pub fn appendChild(self: Element, child: Node) BuildError!void {
+        return self.node().appendChild(child);
+    }
+
+    /// Creates a child element in the same document and appends it.
+    pub fn appendElement(self: Element, local_name: []const u8) BuildError!Element {
+        return self.node().appendElement(local_name);
+    }
+
+    /// Creates a text node in the same document and appends it.
+    pub fn appendText(self: Element, text: []const u8) BuildError!Node {
+        return self.node().appendText(text);
     }
 
     pub fn firstChild(self: Element) ?Node {

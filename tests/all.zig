@@ -17,6 +17,7 @@
 //!   ownership_test    lifetime rules, idempotent teardown, leak checking
 //!   adversarial_test  hostile input and exhausted resources
 //!   fuzz_test         deterministic randomized testing
+//!   build_dom_test    assembling a DOM by hand (no parsing)
 //!   integration_test  end-to-end user scenarios
 
 const std = @import("std");
@@ -34,6 +35,7 @@ test {
     _ = @import("ownership_test.zig");
     _ = @import("adversarial_test.zig");
     _ = @import("fuzz_test.zig");
+    _ = @import("build_dom_test.zig");
     _ = @import("integration_test.zig");
 }
 

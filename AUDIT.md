@@ -14,8 +14,8 @@ audit still does **not** prove.
 | Public headers exported | **226** (of 250 total) |
 | Raw `extern fn` in the bindings | **2 740** (16 602 generated lines) |
 | Public API names covered by the gate | **2 408 / 2 408**, 0 missing |
-| Tests | **182** (156 suite + 26 inline) |
-| Test suite size | 3 132 lines across 16 files |
+| Tests | **199** (173 suite + 26 inline) |
+| Test suite size | 3 500+ lines across 17 files |
 | Target platforms | `x86_64-linux`, `aarch64-linux`, `x86_64-windows-gnu`, `wasm32-wasi` |
 | Optimisation modes tested | Debug, ReleaseSafe, ReleaseFast |
 | CI jobs | 8, all green |
@@ -265,9 +265,37 @@ Parsing `""` yields a full tree, so `queryFirst("*")` on an empty document is
 **not** null. The test now distinguishes "no elements of interest" (`div` →
 null) from "no tree at all" (never true).
 
+**5. An empty element name crashes lexbor itself.**
+This one is an upstream defect, not a wrong assumption. Calling
+`lxb_dom_document_create_element(doc, name, 0, NULL)` — a zero-length name —
+underflows an unsigned offset in `lexbor_shs_entry_get_lower_static`
+(`vendor/lexbor/source/lexbor/core/shs.c:67`):
+
+```
+panic: addition of unsigned offset to 0x19a242a overflowed to 0x19a2429
+  lexbor_shs_entry_get_lower_static  core/shs.c:67
+  lxb_tag_append_lower               tag/tag.c:46
+  lxb_dom_element_create             dom/interfaces/element.c:180
+  lxb_dom_document_create_element    dom/interfaces/document.c:292
+```
+
+Zig's safety checks turn this into an abort; in an optimised build the same
+underflow would wrap and read out of bounds. Names of one byte, of 4 096 bytes,
+and containing `<`, `"`, NUL or high bytes are all fine — only the zero-length
+case is affected.
+
+`dom.createElement` now rejects it with `error.InvalidName` before the call,
+which is also what the DOM specifies (`InvalidCharacterError`).
+`tests/build_dom_test.zig` carries the regression guard.
+
 Two smaller corrections of the same kind: the root element's `parent()` is the
 **document node**, not null; and `<p>text</p>` is not a leaf — its text is a
 child node.
+
+**6. Appending across documents moves the node silently.**
+lexbor does not raise a `WRONG_DOCUMENT_ERR`-style exception: the node is moved
+and the source document is left without a root, so a later `serializeTo` on it
+returns `error.NoRootElement`. Documented and pinned rather than assumed.
 
 ---
 
@@ -364,7 +392,7 @@ The wrapper's central claims are machine-checked rather than asserted:
   errors, exhaustively tested;
 - **hermeticity and portability** — 213 C translation units compiled from a
   pinned vendored tree across four targets, with no system dependency;
-- **behavioural robustness** — 182 tests including allocation-failure injection,
+- **behavioural robustness** — 199 tests including allocation-failure injection,
   deterministic fuzzing and adversarial sizing, all validated by mutation
   testing that proved the suite can fail.
 
