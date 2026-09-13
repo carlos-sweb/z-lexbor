@@ -13,8 +13,10 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
-      - name: Unit + integration tests
-        run: zig build test --summary all
+      - name: Inline unit tests
+        run: zig build test-unit --summary all
+      - name: Full suite (integration, adversarial, fuzz, OOM injection)
+        run: zig build test-suite --summary all
       - name: Public API coverage gate
         run: zig build check-coverage
       - name: Build examples
@@ -23,6 +25,19 @@ jobs:
         run: |
           ./zig-out/bin/parse
           ./zig-out/bin/query
+
+  release-safe:
+    name: full suite under ReleaseSafe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      # Safety checks stay on, so this exercises a different optimisation path
+      # than Debug and can surface undefined behaviour in the C interop layer.
+      - name: Full test suite
+        run: zig build test --summary all -Doptimize=ReleaseSafe
 
   cross:
     name: cross-compile ${{ matrix.target }}

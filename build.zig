@@ -56,11 +56,31 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(example_query);
 
-    // ---- unit tests -----------------------------------------------------
+    // ---- tests -----------------------------------------------------------
+    // Two halves: the inline unit tests that ship next to the code, and the
+    // dedicated tests/ suite (integration, adversarial, fuzz, OOM injection).
     const unit_tests = b.addTest(.{ .root_module = z.module });
     const run_unit_tests = b.addRunArtifact(unit_tests);
-    const test_step = b.step("test", "Run unit tests");
+
+    const suite_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/all.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "z_lexbor", .module = z.module }},
+        }),
+    });
+    const run_suite = b.addRunArtifact(suite_tests);
+
+    const test_step = b.step("test", "Run the inline unit tests and the full tests/ suite");
     test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_suite.step);
+
+    const unit_step = b.step("test-unit", "Run only the inline unit tests in src/");
+    unit_step.dependOn(&run_unit_tests.step);
+
+    const suite_step = b.step("test-suite", "Run only the tests/ suite");
+    suite_step.dependOn(&run_suite.step);
 
     // ---- public API coverage gate ---------------------------------------
     const checker = b.addExecutable(.{

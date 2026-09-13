@@ -30,6 +30,7 @@ defer found.deinit(allocator);
 | Hermetic, version-pinned engine | lexbor `v3.0.1` (`7e278c0`) vendored under `vendor/lexbor/`; the build never reads a system lexbor |
 | Cross-platform | `x86_64-linux`, `aarch64-linux`, `x86_64-windows-gnu` and `wasm32-wasi` all compile and link (see CI) |
 | Easy integration | verified by `tools/check-consumer.sh`, which builds a standalone project against this package |
+| Behaviour is pinned by tests | 182 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
 
 ## Using it
 
@@ -96,11 +97,67 @@ The raw, complete, 1:1 translated C API (`z_lexbor.sys.c`).
 
 | Step | Action |
 |---|---|
-| `zig build test` | Unit + integration tests |
+| `zig build test` | **Everything**: inline unit tests + the full `tests/` suite |
+| `zig build test-unit` | Only the inline unit tests in `src/` |
+| `zig build test-suite` | Only the `tests/` suite |
 | `zig build check-coverage` | Fail if the bindings miss any public symbol |
 | `zig build` | Build the examples |
 | `zig build -Dtarget=...` | Cross-compile for another target |
 | `zig build -Dsystem-lexbor` | Link a system lexbor instead (not hermetic) |
+
+## Testing
+
+182 tests, split in two halves that `zig build test` runs together.
+
+### Inline unit tests (`src/`)
+
+Small, fast tests next to the code they cover, including an exhaustive table of
+every `lxb_status_t` enumerator.
+
+### The `tests/` suite
+
+| File | Focus |
+|---|---|
+| `status_test.zig` | Every status enumerator; a full sweep of raw values proves the mapping never panics |
+| `convert_test.zig` | The C-string/slice boundary, including null and out-of-range lengths |
+| `callback_test.zig` | `callconv(.c)` bridges and how write failures cross back out |
+| `dom_test.zig` | Traversal, iterators, attributes, deep trees |
+| `html_test.zig` | Parsing, document structure, serialization stability |
+| `css_test.zig` | Selector-list parsing, including garbage and 2000-combinator input |
+| `selectors_test.zig` | Matching, document order, early exit, callback errors |
+| `url_test.zig` | WHATWG parsing, relative resolution, IDNA, path traversal strings |
+| `encoding_test.zig` | Label lookup, case-insensitivity, 100 KB labels |
+| `ownership_test.zig` | Idempotent teardown, `Document` has no `deinit`, leak checking |
+| `adversarial_test.zig` | 1 MiB documents, 5000-deep nesting, 64 KiB attributes, NUL bytes, exhausted buffers |
+| `fuzz_test.zig` | Deterministic (seeded) fuzzing of HTML, markup, selectors and URLs |
+| `integration_test.zig` | End-to-end scenarios: scraping, tables, mutation round-trips |
+
+### How failures are provoked
+
+Several techniques are used deliberately, rather than only testing the happy path:
+
+- **Allocation-failure injection** — `std.testing.checkAllAllocationFailures`
+  fails every allocation point in turn and requires that nothing leaks and that
+  the error surfaces. Applied to `queryAll` and `queryFirst`.
+- **Deterministic fuzzing** — seeded `std.Random.DefaultPrng`, so any failure is
+  reproducible; the invariant under fuzz is "typed error or well-formed result,
+  never a trap".
+- **Adversarial sizing** — inputs far outside what any real page contains.
+- **Error-path assertions** — every fallible wrapper API is asserted with
+  `expectError` for its specific error, not just "some error".
+
+### Mutation-checked
+
+The suite was validated by injecting deliberate bugs and confirming it fails:
+
+| Injected bug | Result |
+|---|---|
+| `status.check` swallows `LXB_STATUS_ERROR_NOT_EXISTS` | 3 tests fail |
+| `conv.slice` drops its null guard | tests abort with `panic: attempt to use null value` |
+| `FixedSink` stops reporting truncation | 3 tests fail |
+
+This is also how a real coverage gap was found and closed: the *inline* status
+test originally missed `NotExists`, which the suite caught.
 
 ## Notes
 
