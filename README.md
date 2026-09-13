@@ -30,6 +30,9 @@ defer found.deinit(allocator);
 | Hermetic, version-pinned engine | lexbor `v3.0.1` (`7e278c0`) vendored under `vendor/lexbor/`; the build never reads a system lexbor |
 | Cross-platform | `x86_64-linux`, `aarch64-linux`, `x86_64-windows-gnu` and `wasm32-wasi` all compile and link (see CI) |
 | Easy integration | verified by `tools/check-consumer.sh`, which builds a standalone project against this package |
+
+Every figure above, the method behind it, the assumptions that turned out to be
+wrong and the limits of what was checked are written up in **[AUDIT.md](AUDIT.md)**.
 | Behaviour is pinned by tests | 182 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
 
 ## Using it
@@ -158,6 +161,9 @@ The suite was validated by injecting deliberate bugs and confirming it fails:
 
 This is also how a real coverage gap was found and closed: the *inline* status
 test originally missed `NotExists`, which the suite caught.
+
+See **[AUDIT.md](AUDIT.md)** for the full write-up, including the behaviours this
+suite pinned down and the parts of the system it does not cover.
 
 ## Notes
 

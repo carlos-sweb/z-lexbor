@@ -13,5 +13,6 @@
         "LICENSE",
         "README.md",
         "CHANGELOG.md",
+        "AUDIT.md",
     },
 }
