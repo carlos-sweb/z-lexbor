@@ -204,17 +204,52 @@ test "every lexbor status maps to a named Status" {
     try std.testing.expectEqual(Status.err, fromRaw(0xFFFF));
 }
 
-test "check separates failures from control signals" {
-    try check(raw_ok);
-    try check(c.LXB_STATUS_WARNING);
-    try check(c.LXB_STATUS_NEXT);
-    try check(c.LXB_STATUS_STOP);
-    try check(c.LXB_STATUS_SMALL_BUFFER);
+test "check separates failures from control signals, exhaustively" {
+    // Every enumerator is covered on purpose: a single misclassified status
+    // would make `try` report success for a failure (or the reverse). An
+    // earlier version of this test only sampled three of them, and a mutation
+    // that swallowed `NotExists` slipped past it -- the tests/ suite caught it,
+    // but the fast inline check should too.
+    const table = [_]struct { raw: c.lxb_status_t, err: ?Error }{
+        .{ .raw = c.LXB_STATUS_OK, .err = null },
+        .{ .raw = c.LXB_STATUS_ERROR, .err = error.LexborError },
+        .{ .raw = c.LXB_STATUS_ERROR_MEMORY_ALLOCATION, .err = error.OutOfMemory },
+        .{ .raw = c.LXB_STATUS_ERROR_OBJECT_IS_NULL, .err = error.ObjectIsNull },
+        .{ .raw = c.LXB_STATUS_ERROR_SMALL_BUFFER, .err = error.SmallBuffer },
+        .{ .raw = c.LXB_STATUS_ERROR_INCOMPLETE_OBJECT, .err = error.IncompleteObject },
+        .{ .raw = c.LXB_STATUS_ERROR_NO_FREE_SLOT, .err = error.NoFreeSlot },
+        .{ .raw = c.LXB_STATUS_ERROR_TOO_SMALL_SIZE, .err = error.TooSmallSize },
+        .{ .raw = c.LXB_STATUS_ERROR_NOT_EXISTS, .err = error.NotExists },
+        .{ .raw = c.LXB_STATUS_ERROR_WRONG_ARGS, .err = error.WrongArgs },
+        .{ .raw = c.LXB_STATUS_ERROR_WRONG_STAGE, .err = error.WrongStage },
+        .{ .raw = c.LXB_STATUS_ERROR_UNEXPECTED_RESULT, .err = error.UnexpectedResult },
+        .{ .raw = c.LXB_STATUS_ERROR_UNEXPECTED_DATA, .err = error.UnexpectedData },
+        .{ .raw = c.LXB_STATUS_ERROR_OVERFLOW, .err = error.Overflow },
+        .{ .raw = c.LXB_STATUS_CONTINUE, .err = null },
+        .{ .raw = c.LXB_STATUS_SMALL_BUFFER, .err = null },
+        .{ .raw = c.LXB_STATUS_ABORTED, .err = error.Aborted },
+        .{ .raw = c.LXB_STATUS_STOPPED, .err = null },
+        .{ .raw = c.LXB_STATUS_NEXT, .err = null },
+        .{ .raw = c.LXB_STATUS_STOP, .err = null },
+        .{ .raw = c.LXB_STATUS_WARNING, .err = null },
+        .{ .raw = c.LXB_STATUS_SKIPPED, .err = null },
+    };
 
-    try std.testing.expectError(error.OutOfMemory, check(c.LXB_STATUS_ERROR_MEMORY_ALLOCATION));
-    try std.testing.expectError(error.ObjectIsNull, check(c.LXB_STATUS_ERROR_OBJECT_IS_NULL));
-    try std.testing.expectError(error.LexborError, check(c.LXB_STATUS_ERROR));
+    for (table) |case| {
+        if (case.err) |want| {
+            try std.testing.expectError(want, check(case.raw));
+            try std.testing.expect(isError(case.raw));
+        } else {
+            try check(case.raw);
+            try std.testing.expect(!isError(case.raw));
+        }
+    }
 
-    try std.testing.expect(!isError(c.LXB_STATUS_OK));
-    try std.testing.expect(isError(c.LXB_STATUS_ERROR));
+    // The table must cover every enumerator: a new lexbor status breaks the
+    // build here until it is classified.
+    try std.testing.expectEqual(std.enums.values(Status).len, table.len);
+
+    // Unknown values degrade to a generic error rather than trapping.
+    try std.testing.expectError(error.LexborError, check(0xFFFF));
+    try std.testing.expectEqual(Status.err, fromRaw(0xFFFF));
 }
