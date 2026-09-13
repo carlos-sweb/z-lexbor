@@ -32,6 +32,12 @@ pub const url = @import("url.zig");
 /// WHATWG encoding lookup.
 pub const encoding = @import("encoding.zig");
 
+/// CSS cascade resolution and per-element computed styles.
+pub const style = @import("style.zig");
+
+/// Error raised by `style` when a document has no CSS state.
+pub const StyleError = style.StyleError;
+
 /// Conversion and callback helpers shared by the wrapper modules.
 pub const internal = struct {
     pub const convert = @import("internal/convert.zig");
@@ -54,4 +60,5 @@ test {
     _ = selectors;
     _ = url;
     _ = encoding;
+    _ = style;
 }

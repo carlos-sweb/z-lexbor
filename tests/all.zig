@@ -18,7 +18,9 @@
 //!   adversarial_test  hostile input and exhausted resources
 //!   fuzz_test         deterministic randomized testing
 //!   build_dom_test    assembling a DOM by hand (no parsing)
-//!   style_test        CSS cascade and computed styles
+//!   style_test        CSS cascade and computed styles (raw sys API)
+//!   style_deep_test   the style module: cascade, specificity, injection
+//!   style_adversarial hostile CSS, OOM injection and fuzzing
 //!   integration_test  end-to-end user scenarios
 
 const std = @import("std");
@@ -38,6 +40,8 @@ test {
     _ = @import("fuzz_test.zig");
     _ = @import("build_dom_test.zig");
     _ = @import("style_test.zig");
+    _ = @import("style_deep_test.zig");
+    _ = @import("style_adversarial_test.zig");
     _ = @import("integration_test.zig");
 }
 

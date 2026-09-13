@@ -7,6 +7,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Idiomatic `style` module** (`src/style.zig`): `Engine` (owns a document and
+  its CSS state), `StyledDocument`, `Computed`, `Entry` and `Specificity`.
+  - `Engine.parse()` resolves `<style>` elements, `style="..."` attributes and
+    injected stylesheets into per-element computed styles.
+  - `Computed.get` / `getById` / `property` / `count` / `isEmpty` /
+    `serialize` / `serializeAlloc` / `walk` / `collect`.
+  - `Entry.serialize` (name + value, keeps `!important`), `Specificity` decoding
+    (`!important`, style attribute, a/b/c counts, cascade `order()`).
+  - `StyledDocument.applyStylesheet()` injects CSS into an already-built tree.
+  - **36 new tests** (`tests/style_deep_test.zig`, `tests/style_adversarial_test.zig`):
+    cascade, specificity decoding, stylesheet injection, hostile CSS (10 000
+    rules, 100 KB names, NUL and invalid UTF-8), OOM injection and seeded fuzzing.
+
+### Fixed
+
+- **`style.of()` returns `error.StyleNotInitialized` instead of aborting.** lexbor
+  dereferences `document.css` without a null check; the wrapper checks first, so
+  the crash is no longer reachable from Zig. Regression-tested.
+- **`Computed.get()`/`property()` reject an empty property name.** It triggers the
+  same lexbor hash underflow as the empty element name (`core/shs.c:67`) and
+  aborts. Found by fuzzing.
+- **Callback errors are no longer masked** by the generic status lexbor returns
+  when a walk callback aborts (would have turned an allocation failure into
+  `error.LexborError`).
+- `Entry.toOwnedString` / `Computed.serializeAlloc` leaked the writer's buffer.
+
+### Documented (lexbor limitations, pinned by tests)
+
+- **Styles are resolved at insertion time.** Changing an attribute afterwards
+  does **not** recompute the computed style, even though `lxb_style_init()`
+  installs attribute mutation steps. Elements inserted after parsing do get
+  styles.
+- **`var()` is not substituted**: `color: var(--main)` is stored literally and
+  looking up `color` returns null.
+- **Neither the document nor the parser frees the CSS state**; only
+  `lxb_style_destroy()` does. This is why `html.Parser` deliberately gets no
+  styled-parse API, and why `style.Engine` wraps `lxb_engine_t` (whose teardown
+  uses the right order).
+- `lxb_dom_element_style_walk` returns `LXB_STATUS_ERROR_WRONG_ARGS` (9) for an
+  element with no style node — normalised to an empty walk.
+
 - **Build a DOM without parsing.** `html.OwnedDocument` wraps
   `lxb_html_document_create()` (which returns an *empty* document — the tree
   builder only runs during parsing), and `dom` gained the mutation primitives:

@@ -33,7 +33,7 @@ defer found.deinit(allocator);
 
 Every figure above, the method behind it, the assumptions that turned out to be
 wrong and the limits of what was checked are written up in **[AUDIT.md](AUDIT.md)**.
-| Behaviour is pinned by tests | 213 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
+| Behaviour is pinned by tests | 248 tests: exhaustive status mapping, OOM injection, deterministic fuzzing and adversarial input; all pass in Debug, ReleaseSafe and ReleaseFast |
 
 ## Using it
 
@@ -202,9 +202,37 @@ try lexbor.status.check(c.lxb_dom_element_style_serialize_str(element, &str, 0))
 > `html.Parser` (which does not call `lxb_style_init()`) that field is null and
 > the call aborts. See `AUDIT.md`.
 
-There is no idiomatic wrapper for the `style` module yet — it is reachable
-through `sys`. The `css` and `selectors` modules do have wrappers
-(`css.Parser`, `selectors.Engine`).
+### Idiomatic API
+
+```zig
+var engine = try lexbor.style.Engine.create();   // owns the document + CSS state
+defer engine.deinit();
+
+const doc = try engine.parse("<style>p{color:red}</style><p class=x>hi</p>");
+const p = ...;                                    // any dom.Element
+
+const computed = try doc.styleOf(p);
+const text = try computed.serializeAlloc(allocator);   // "color: red"
+const color = computed.get("color");                   // ?Entry, with specificity
+try std.testing.expect((color.?.specificity).classes() == 1);
+
+try doc.applyStylesheet(".x { font-size: 12px }");     // inject CSS later
+```
+
+| Type | Role |
+|---|---|
+| `style.Engine` | Owns the document **and** its CSS state; only path that guarantees `document.css != null` |
+| `style.StyledDocument` | Borrowed view; `styleOf`, `applyStylesheet` |
+| `style.Computed` | One element's computed style: `get`, `property`, `count`, `serialize`, `walk`, `collect` |
+| `style.Entry` | A declaration + the `Specificity` that selected it |
+| `style.Specificity` | `!important`, style-attribute flag, a/b/c counts, `order()` |
+
+`style.of(element) !Computed` is the checked escape hatch for an arbitrary
+element: it returns `error.StyleNotInitialized` rather than aborting.
+
+Known lexbor limitations, pinned by tests: styles are resolved at **insertion**
+time (changing an attribute later does not recompute them), and `var()` is
+**not** substituted.
 
 ## Layout
 
@@ -232,7 +260,7 @@ through `sys`. The `css` and `selectors` modules do have wrappers
 
 ## Testing
 
-213 tests, split in two halves that `zig build test` runs together.
+248 tests, split in two halves that `zig build test` runs together.
 
 ### Inline unit tests (`src/`)
 
@@ -256,7 +284,9 @@ every `lxb_status_t` enumerator.
 | `adversarial_test.zig` | 1 MiB documents, 5000-deep nesting, 64 KiB attributes, NUL bytes, exhausted buffers |
 | `fuzz_test.zig` | Deterministic (seeded) fuzzing of HTML, markup, selectors and URLs |
 | `build_dom_test.zig` | Assembling a DOM by hand, including the lexbor empty-name defect |
-| `style_test.zig` | CSS cascade: specificity, `!important`, inline style, source order |
+| `style_test.zig` | CSS cascade via the raw `sys` API |
+| `style_deep_test.zig` | The `style` module: cascade, specificity, injection, guard |
+| `style_adversarial_test.zig` | Hostile CSS, OOM injection, seeded fuzzing |
 | `integration_test.zig` | End-to-end scenarios: scraping, tables, mutation round-trips |
 
 ### How failures are provoked
