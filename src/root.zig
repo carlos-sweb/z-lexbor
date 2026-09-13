@@ -26,6 +26,12 @@ pub const css = @import("css.zig");
 /// CSS selector matching (`querySelector`).
 pub const selectors = @import("selectors.zig");
 
+/// WHATWG URL parsing.
+pub const url = @import("url.zig");
+
+/// WHATWG encoding lookup.
+pub const encoding = @import("encoding.zig");
+
 /// Conversion and callback helpers shared by the wrapper modules.
 pub const internal = struct {
     pub const convert = @import("internal/convert.zig");
@@ -46,4 +52,6 @@ test {
     _ = html;
     _ = css;
     _ = selectors;
+    _ = url;
+    _ = encoding;
 }
