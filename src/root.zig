@@ -20,6 +20,12 @@ pub const dom = @import("dom.zig");
 /// HTML parser and document wrapper.
 pub const html = @import("html.zig");
 
+/// CSS parser (selector lists).
+pub const css = @import("css.zig");
+
+/// CSS selector matching (`querySelector`).
+pub const selectors = @import("selectors.zig");
+
 /// Conversion and callback helpers shared by the wrapper modules.
 pub const internal = struct {
     pub const convert = @import("internal/convert.zig");
@@ -38,4 +44,6 @@ test {
     _ = internal.callback;
     _ = dom;
     _ = html;
+    _ = css;
+    _ = selectors;
 }
