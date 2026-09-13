@@ -14,6 +14,12 @@ pub const sys = @import("sys/root.zig");
 /// lexbor status codes and their Zig error mapping.
 pub const status = @import("status.zig");
 
+/// DOM views, iterators and attribute access.
+pub const dom = @import("dom.zig");
+
+/// HTML parser and document wrapper.
+pub const html = @import("html.zig");
+
 /// Conversion and callback helpers shared by the wrapper modules.
 pub const internal = struct {
     pub const convert = @import("internal/convert.zig");
@@ -30,4 +36,6 @@ test {
     _ = status;
     _ = internal.convert;
     _ = internal.callback;
+    _ = dom;
+    _ = html;
 }
