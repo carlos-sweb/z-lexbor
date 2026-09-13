@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test + coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Unit + integration tests
+        run: zig build test --summary all
+      - name: Public API coverage gate
+        run: zig build check-coverage
+      - name: Build examples
+        run: zig build
+      - name: Run examples
+        run: |
+          ./zig-out/bin/parse
+          ./zig-out/bin/query
+
+  cross:
+    name: cross-compile ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-linux-gnu
+          - target: x86_64-windows-gnu
+          - target: wasm32-wasi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Build for ${{ matrix.target }}
+        run: zig build -Dtarget=${{ matrix.target }} --summary all
+
+  macos:
+    name: native macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - run: zig build test --summary all
+      - run: zig build check-coverage
+
+  consumer:
+    name: external consumer integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Verify a standalone project can depend on z-lexbor
+        run: ./tools/check-consumer.sh
+
+  hermetic:
+    name: no system lexbor present
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Fail if the build reaches outside the vendored tree
+        run: |
+          test ! -d /usr/local/include/lexbor
+          zig build test --summary all
