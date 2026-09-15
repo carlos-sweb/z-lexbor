@@ -288,6 +288,12 @@ case is affected.
 which is also what the DOM specifies (`InvalidCharacterError`).
 `tests/build_dom_test.zig` carries the regression guard.
 
+The **same** hash underflow is reachable through a zero-length CSS property
+name: `lxb_style_id_by_name()` → `lxb_css_property_by_name(name, 0)`. It was
+found by fuzzing `Computed.get()` / `Computed.property()` and is guarded the same
+way (an empty property name is treated as absent). See §6.1 for why both are
+genuine upstream bugs rather than misuse.
+
 Two smaller corrections of the same kind: the root element's `parent()` is the
 **document node**, not null; and `<p>text</p>` is not a leaf — its text is a
 child node.
@@ -314,6 +320,73 @@ README.
 lexbor does not raise a `WRONG_DOCUMENT_ERR`-style exception: the node is moved
 and the source document is left without a root, so a later `serializeTo` on it
 returns `error.NoRootElement`. Documented and pinned rather than assumed.
+
+### 6.1 Re-analysis: bug, contract, or missing feature?
+
+Every lexbor finding was re-checked against the source instead of being taken on
+trust. The question was whether the wrapper was misusing the API or the
+observation was real. The answer is mixed, and matters because it changes how
+the docs should describe each one.
+
+| # | Observation | Verdict |
+|---|---|---|
+| 5 | Empty **element** name underflows the tag hash | **Genuine bug** |
+| 5b | Empty **property** name underflows the same hash | **Genuine bug** (same root cause) |
+| 6 | Style query dereferences `doc->css` without a null check | **Unchecked precondition** |
+| — | Document destroy without `lxb_style_destroy()` leaks CSS state | **Lifecycle contract** |
+| — | `style_walk` returns `WRONG_ARGS` (9) for an unstyled element | **API quirk** |
+| — | Changing an attribute does not recompute styles | **Missing feature** |
+| — | `var()` is not substituted | **Missing feature** |
+
+**5 / 5b are genuine bugs.** `lexbor_shs_make_id_lower_m(key, size, …)` reads
+`key[size - 1]`; with `size == 0` that is `key[-1]`, an out-of-bounds read plus
+pointer underflow. The evidence it is an oversight rather than an assumption:
+
+* the sibling lookups `lxb_tag_data_by_name()` / `_upper()` **do** guard
+  `name == NULL || len == 0` and return null — `lxb_tag_append_lower()`, which
+  sits on the `create_element` path, does not;
+* `lxb_css_property_by_name()` lacks the guard too;
+* `document.createElement("")` must throw `InvalidCharacterError` per the DOM,
+  not crash. Guarding at the Zig boundary with `error.InvalidName` is the right
+  fix, and the "lexbor bug" attribution stands.
+
+**6 is an unchecked precondition, not a bug in normal use.** The style API
+requires `lxb_style_init()` first, and lexbor assumes it. Notably, lexbor's own
+`lxb_html_document_done_cb()` *does* guard `css == NULL`, so the defensive
+pattern exists in-tree — the read API just omits it. The wrapper's
+`error.StyleNotInitialized` is correct defensive programming, but describing it
+as "lexbor crashes" should not be read as "lexbor is broken": the contract is
+"initialise before reading".
+
+**The CSS-state leak is a lifecycle contract.** `lxb_dom_document_destroy()`
+frees text, memory, tags, ns, attrs and prefix but deliberately not `doc->css`;
+`lxb_style_destroy()` is the only teardown for it. `lxb_engine_t` exists to
+encapsulate the correct order, which is why `style.Engine` wraps it and why
+`html.Parser` gets no styled parse. Asymmetric, but intended.
+
+**`style_walk` returning `WRONG_ARGS` for an unstyled element is an API quirk.**
+It comes from `lexbor_avl_foreach(NULL, &element->style, …)` treating a null
+root as "wrong arguments". The wrapper now checks `element->style == NULL`
+directly instead of interpreting that status code, so it no longer depends on
+the quirk.
+
+**Attribute change not recomputing styles is a missing feature.** The trace was
+followed: `lxb_dom_element_set_attribute()` → `lxb_dom_attr_set_value()` does
+dispatch `attr_mutation->change`, but
+`lxb_style_attribute_steps_change()` dispatches per **element tag**, and the
+handler is null for generic elements like `<p>`. The steps exist for
+spec-defined special attributes (`<option>`, `<select>`, `<style>`, …), not for
+general CSS re-resolution. So it is neither a bug nor a misuse of the wrong
+setter — the capability simply is not there yet.
+
+**`var()` is not even tokenised.** `grep` over `css/syntax/` finds no `var(`
+handling; custom properties (`--x`) are stored, but `var()` substitution is not
+implemented at all.
+
+**Conclusion:** the wrapper's approach is correct in every case. The two real
+bugs are guarded at the boundary; the precondition and the lifecycle contract
+are enforced by the type system (`Engine` owns both document and CSS state); and
+the missing features are pinned by tests rather than silently tolerated.
 
 ---
 

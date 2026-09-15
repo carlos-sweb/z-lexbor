@@ -293,6 +293,12 @@ pub const Computed = struct {
 
         var bridge = Bridge{ .ctx = ctx };
 
+        // An element that matched nothing has element->style == NULL, and
+        // lexbor's lexbor_avl_foreach() reports that as
+        // LXB_STATUS_ERROR_WRONG_ARGS (9) -- a misleading status for an empty
+        // collection. Check the field directly instead of interpreting it.
+        if (self.element.*.style == null) return;
+
         const walk_status = c.lxb_dom_element_style_walk(
             self.element,
             Bridge.cb,
@@ -305,16 +311,7 @@ pub const Computed = struct {
         // real error (an allocation failure, say) recorded in the bridge.
         if (bridge.err) |err| return err;
 
-        // An element that matched nothing has no style node at all, and lexbor
-        // reports that by returning LXB_STATUS_ERROR_WRONG_ARGS (9) -- verified
-        // empirically for an empty document, for an element matching no rule,
-        // and for an empty element. That means "no declarations", not a
-        // failure, so it is normalised to an empty walk. Anything else
-        // propagates.
-        switch (status.fromRaw(walk_status)) {
-            .ok, .not_exists, .object_is_null, .wrong_args => {},
-            else => try status.check(walk_status),
-        }
+        try status.check(walk_status);
     }
 
     /// Collects the winning declarations. Caller owns the slice.
