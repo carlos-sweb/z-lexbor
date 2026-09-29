@@ -56,6 +56,7 @@ const c = @import("sys/root.zig").c;
 const status = @import("status.zig");
 const conv = @import("internal/convert.zig");
 const callback = @import("internal/callback.zig");
+/// DOM node and element views used by computed-style operations.
 pub const dom = @import("dom.zig");
 
 /// Errors specific to the `style` module.

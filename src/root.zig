@@ -9,6 +9,7 @@
 //!     `status`) — RAII types, Zig slices, error sets and `std.Io` integration
 //!     built on top of `sys`.
 
+/// Complete low-level API, translated directly from the vendored C headers.
 pub const sys = @import("sys/root.zig");
 
 /// lexbor status codes and their Zig error mapping.
@@ -47,6 +48,7 @@ pub const internal = struct {
 /// Raw success/error values and the `Status`/`Error` types, re-exported for
 /// convenience.
 pub const Status = status.Status;
+/// Errors returned by the common lexbor wrapper operations.
 pub const Error = status.Error;
 
 test {

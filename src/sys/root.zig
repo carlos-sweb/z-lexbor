@@ -14,4 +14,5 @@
 //!   * Idiomatic sugar belongs in the wrapper modules (`html.zig`, `dom.zig`,
 //!     ...), never here.
 
+/// The generated, complete `translate-c` module for lexbor's public headers.
 pub const c = @import("c");

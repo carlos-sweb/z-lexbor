@@ -13,9 +13,12 @@ const std = @import("std");
 const c = @import("sys/root.zig").c;
 const status = @import("status.zig");
 const conv = @import("internal/convert.zig");
+/// CSS parser types used to compile selector lists.
 pub const css = @import("css.zig");
+/// DOM node and element views accepted by selector operations.
 pub const dom = @import("dom.zig");
 
+/// Alias for a CSS selector list compiled by this engine.
 pub const SelectorList = css.SelectorList;
 
 /// Errors a match callback may return.

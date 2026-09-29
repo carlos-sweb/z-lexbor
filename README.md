@@ -254,6 +254,7 @@ time (changing an attribute later does not recompute them), and `var()` is
 | `zig build test-unit` | Only the inline unit tests in `src/` |
 | `zig build test-suite` | Only the `tests/` suite |
 | `zig build check-coverage` | Fail if the bindings miss any public symbol |
+| `zig build docs` | Generate native Zig HTML API documentation in `zig-out/docs/` |
 | `zig build` | Build the examples |
 | `zig build -Dtarget=...` | Cross-compile for another target |
 | `zig build -Dsystem-lexbor` | Link a system lexbor instead (not hermetic) |

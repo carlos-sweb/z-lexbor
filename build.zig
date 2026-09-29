@@ -104,6 +104,24 @@ pub fn build(b: *std.Build) void {
     const suite_step = b.step("test-suite", "Run only the tests/ suite");
     suite_step.dependOn(&run_suite.step);
 
+    // ---- API documentation ---------------------------------------------
+    // Zig emits documentation from the public declarations reachable through
+    // src/root.zig.  Building a private static library is intentional: a
+    // module alone has no compile step and therefore cannot emit HTML.  It
+    // reuses the exact public module above, including the generated `c`
+    // module, so the docs cover both the high-level wrappers and sys.c.
+    const docs_library = b.addLibrary(.{
+        .name = "z_lexbor_docs",
+        .root_module = z.module,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_library.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Generate Zig API documentation in zig-out/docs");
+    docs_step.dependOn(&install_docs.step);
+
     // ---- public API coverage gate ---------------------------------------
     const checker = b.addExecutable(.{
         .name = "check-coverage",
