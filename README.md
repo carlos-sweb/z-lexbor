@@ -7,7 +7,7 @@ The **entire** lexbor API is reachable from Zig, and the engine is compiled
 from vendored sources by `zig build` — no CMake, no pkg-config, no system
 lexbor.
 
-[Consultar la documentación API publicada](https://carlos-sweb.github.io/z-lexbor/)
+[View the published API documentation](https://carlos-sweb.github.io/z-lexbor/)
 
 ```zig
 const lexbor = @import("z_lexbor");
