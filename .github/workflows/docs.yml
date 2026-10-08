@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
       - name: Generate native Zig documentation
         run: zig build docs --summary all
       - name: Upload Pages artifact

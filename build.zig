@@ -132,7 +132,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const run_checker = b.addRunArtifact(checker);
-    run_checker.addArg(b.pathFromRoot(lexbor_root));
+    run_checker.addDirectoryArg2(b.path(lexbor_root), .{ .make_absolute = true });
     run_checker.addFileArg(z.bindings.getOutput());
     const coverage_step = b.step(
         "check-coverage",
@@ -214,7 +214,7 @@ fn addBindings(
     });
 
     const run_gen = b.addRunArtifact(gen);
-    run_gen.addArg(b.pathFromRoot(lexbor_root));
+    run_gen.addDirectoryArg2(b.path(lexbor_root), .{ .make_absolute = true });
     const c_header = run_gen.addOutputFileArg("lexbor_c.h");
 
     const tc = b.addTranslateC(.{
@@ -259,10 +259,15 @@ fn cFlags(target: std.Target) []const []const u8 {
 /// the port selected for the target is compiled.
 fn collectCSources(b: *std.Build, root_rel: []const u8, skip_ports: bool) []const []const u8 {
     const io = std.Io.Threaded.global_single_threaded.io();
-    const abs = b.pathFromRoot(root_rel);
 
-    var dir = std.Io.Dir.cwd().openDir(io, abs, .{ .iterate = true }) catch |err| {
-        std.debug.panic("z-lexbor: cannot open vendored source '{s}': {s}", .{ abs, @errorName(err) });
+    // The recursive scan determines the C source list during configuration.
+    // Zig 0.17 tracks directory dependencies non-recursively, so register
+    // each directory as it is visited. This detects added/removed .c files
+    // without invalidating the configuration cache on every build.
+    b.dependOnDirectoryContents(b.path(root_rel));
+
+    var dir = b.root.openDir(io, root_rel, .{ .iterate = true }) catch |err| {
+        std.debug.panic("z-lexbor: cannot open vendored source '{s}': {s}", .{ root_rel, @errorName(err) });
     };
     defer dir.close(io);
 
@@ -272,17 +277,21 @@ fn collectCSources(b: *std.Build, root_rel: []const u8, skip_ports: bool) []cons
     var list: std.ArrayList([]const u8) = .empty;
 
     while (walker.next(io) catch @panic("z-lexbor: failed to walk vendored source tree")) |entry| {
+        if (entry.kind == .directory) {
+            b.dependOnDirectoryContents(b.path(b.pathJoin(&.{ root_rel, entry.path })));
+            continue;
+        }
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".c")) continue;
         if (skip_ports and std.mem.startsWith(u8, entry.path, "lexbor/ports/")) continue;
 
-        const dup = b.dupe(entry.path);
+        const dup = b.allocator.dupe(u8, entry.path) catch @panic("z-lexbor: out of memory");
         std.mem.replaceScalar(u8, dup, '\\', '/');
         list.append(b.allocator, dup) catch @panic("z-lexbor: out of memory");
     }
 
     if (list.items.len == 0) {
-        std.debug.panic("z-lexbor: no C sources found under '{s}'", .{abs});
+        std.debug.panic("z-lexbor: no C sources found under '{s}'", .{root_rel});
     }
 
     std.mem.sort([]const u8, list.items, {}, lessThanStr);

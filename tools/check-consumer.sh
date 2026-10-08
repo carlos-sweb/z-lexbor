@@ -16,14 +16,14 @@ export ZIG_LOCAL_CACHE_DIR="$work/.zig-cache/local"
 
 mkdir -p "$work/src"
 
-# Zig 0.16 requires dependency paths relative to the consumer's build root.
+# Zig package paths are relative to the consumer's build root.
 rel_repo="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$work" "$repo_root")"
 
 cat > "$work/build.zig.zon" <<EOF
 .{
     .name = .consumer,
     .version = "0.0.0",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .fingerprint = 0x0123456789abcdef,
     .dependencies = .{
         .z_lexbor = .{ .path = "$rel_repo" },

@@ -1,6 +1,6 @@
 # z-lexbor
 
-Zig 0.16 bindings and idiomatic wrapper for the [lexbor](https://github.com/lexbor/lexbor)
+Zig 0.17 bindings and idiomatic wrapper for the [lexbor](https://github.com/lexbor/lexbor)
 HTML engine.
 
 The **entire** lexbor API is reachable from Zig, and the engine is compiled
