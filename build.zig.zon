@@ -1,6 +1,6 @@
 .{
     .name = .z_lexbor,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .minimum_zig_version = "0.17.0",
     .fingerprint = 0x1a7d0c366945755b,
     .paths = .{
